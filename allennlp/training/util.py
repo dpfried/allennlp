@@ -177,6 +177,20 @@ def datasets_from_params(params: Params,
     logger.info("Reading training data from %s", train_data_path)
     train_data = dataset_reader.read(train_data_path)
 
+    train_data_fraction = float(params.pop('train_data_fraction'))
+    if train_data_fraction != 1.0:
+        train_data = list(train_data)
+        import random
+        state = random.Random(1)
+        state.shuffle(train_data)
+        _n_to_keep = min(int(len(train_data) * train_data_fraction), len(train_data))
+        logger.info("Truncating training data to {}% ({}/{} instances)".format(
+            100 * train_data_fraction,
+            _n_to_keep,
+            len(train_data)
+        ))
+        train_data = train_data[:_n_to_keep]
+
     datasets: Dict[str, Iterable[Instance]] = {"train": train_data}
 
     validation_data_path = params.pop('validation_data_path', None)
@@ -362,7 +376,6 @@ def get_metrics(model: Model, total_loss: float, num_batches: int, reset: bool =
     metrics = model.get_metrics(reset=reset)
     metrics["loss"] = float(total_loss / num_batches) if num_batches > 0 else 0.0
     return metrics
-
 
 def evaluate(model: Model,
              instances: Iterable[Instance],

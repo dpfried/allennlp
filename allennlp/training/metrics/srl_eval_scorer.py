@@ -39,12 +39,22 @@ class SrlEvalScorer(Metric):
     def __init__(self,
                  srl_eval_path: str = DEFAULT_SRL_EVAL_PATH,
                  ignore_classes: List[str] = None) -> None:
+        logger.info("srl_eval_path: {}".format(srl_eval_path))
         self._srl_eval_path = srl_eval_path
         self._ignore_classes = set(ignore_classes)
         # These will hold per label span counts.
         self._true_positives: Dict[str, int] = defaultdict(int)
         self._false_positives: Dict[str, int] = defaultdict(int)
         self._false_negatives: Dict[str, int] = defaultdict(int)
+
+        self._reset_predictions()
+
+
+    def _reset_predictions(self):
+        self._batch_verb_indices = []
+        self._batch_sentences = []
+        self._batch_conll_formatted_predicted_tags = []
+        self._batch_conll_formatted_gold_tags = []
 
     @overrides
     def __call__(self,  # type: ignore
@@ -73,6 +83,12 @@ class SrlEvalScorer(Metric):
             to convert from BIO to CoNLL format before passing the
             tags into the metric, if applicable.
         """
+        self._batch_verb_indices += batch_verb_indices
+        self._batch_sentences += batch_sentences
+        self._batch_conll_formatted_predicted_tags += batch_conll_formatted_predicted_tags
+        self._batch_conll_formatted_gold_tags += batch_conll_formatted_gold_tags
+
+    def _eval_predictions(self) -> None:
         if not os.path.exists(self._srl_eval_path):
             raise ConfigurationError(f"srl-eval.pl not found at {self._srl_eval_path}.")
         tempdir = tempfile.mkdtemp()
@@ -81,10 +97,10 @@ class SrlEvalScorer(Metric):
 
         with open(predicted_path, "w") as predicted_file, open(gold_path, "w") as gold_file:
             for verb_index, sentence, predicted_tag_sequence, gold_tag_sequence in zip(
-                    batch_verb_indices,
-                    batch_sentences,
-                    batch_conll_formatted_predicted_tags,
-                    batch_conll_formatted_gold_tags):
+                    self._batch_verb_indices,
+                    self._batch_sentences,
+                    self._batch_conll_formatted_predicted_tags,
+                    self._batch_conll_formatted_gold_tags):
                 write_conll_formatted_tags_to_file(predicted_file,
                                                    gold_file,
                                                    verb_index,
@@ -109,6 +125,7 @@ class SrlEvalScorer(Metric):
                 self._false_positives[tag] += num_excess
                 self._false_negatives[tag] += num_missed
         shutil.rmtree(tempdir)
+        self._reset_predictions()
 
     def get_metric(self, reset: bool = False):
         """
@@ -122,6 +139,8 @@ class SrlEvalScorer(Metric):
         Additionally, an ``overall`` key is included, which provides the precision,
         recall and f1-measure for all spans.
         """
+        if reset:
+            self._eval_predictions()
         all_tags: Set[str] = set()
         all_tags.update(self._true_positives.keys())
         all_tags.update(self._false_positives.keys())

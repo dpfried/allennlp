@@ -6,6 +6,8 @@ import spacy
 from spacy.tokens import Doc
 import ftfy
 
+import nltk
+
 from pytorch_pretrained_bert.tokenization import BasicTokenizer as BertTokenizer
 
 from allennlp.common import Registrable
@@ -246,3 +248,46 @@ class BertBasicWordSplitter(WordSplitter):
     @overrides
     def split_words(self, sentence: str) -> List[Token]:
         return [Token(text) for text in self.basic_tokenizer.tokenize(sentence)]
+
+@WordSplitter.register("bertable-ptb")
+class BertablePTBWordSplitter(WordSplitter):
+    TOKEN_MAPPING = {
+        u"``": u'"',
+        u"''": u'"',
+        u"`": u"'",
+        # u'«': u'"',
+        # u'»': u'"',
+        u"‘": u"'",
+        u"’": u"'",
+        u"“": u'"',
+        u"”": u'"',
+        u"„": u'"',
+        u"‹": u"'",
+        u"›": u"'",
+    }
+
+    def __init__(self, *args, **kwargs):
+        super(BertablePTBWordSplitter, self).__init__(*args, **kwargs)
+
+    def clean_tokens(self, words: List[str]) -> List[Token]:
+        cleaned_words = []
+        for word in words:
+            word = self.TOKEN_MAPPING.get(word, word)
+            word = word.replace('\\/', '/').replace('\\*', '*')
+            word = word.replace('-LSB-', '[').replace('-RSB-', ']').replace('-LRB-', '(').replace('-RRB-', ')') # added for Genia
+            if word == "n't" and cleaned_words:
+                cleaned_words[-1] = cleaned_words[-1] + u"n"
+                word = u"'t"
+            cleaned_words.append(word)
+        return cleaned_words
+
+    @overrides
+    def split_words(self, sentence: str) -> List[Token]:
+        words = nltk.word_tokenize(sentence)
+        cleaned_words = self.clean_tokens(words)
+        return [Token(token) for token in cleaned_words]
+        # tokens = []
+        # for word in cleaned_words:
+        #     word_tokens = self.basic_tokenizer.tokenize(word)
+        #     tokens.extend(Token(text) for text in word_tokens)
+        # return tokens
