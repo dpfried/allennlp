@@ -177,7 +177,7 @@ class Ontonotes:
         """
         An iterator over the entire dataset, yielding all sentences processed.
         """
-        for conll_file in self.dataset_path_iterator(file_path):
+        for conll_file in sorted(self.dataset_path_iterator(file_path)):
             yield from self.sentence_iterator(conll_file)
 
     @staticmethod

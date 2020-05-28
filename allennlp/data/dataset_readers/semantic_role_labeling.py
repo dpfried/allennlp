@@ -10,6 +10,7 @@ from allennlp.data.fields import Field, TextField, SequenceLabelField, MetadataF
 from allennlp.data.instance import Instance
 from allennlp.data.token_indexers import SingleIdTokenIndexer, TokenIndexer
 from allennlp.data.tokenizers import Token
+from allennlp.data.tokenizers.word_splitter import BertablePTBWordSplitter
 from allennlp.data.dataset_readers.dataset_utils import Ontonotes, OntonotesSentence
 
 
@@ -119,6 +120,8 @@ class SrlReader(DatasetReader):
         assume you want to use BERT throughout; we will use the bert tokenizer,
         and will expand your tags and verb indicators accordingly. If not,
         the tokens will be indexed as normal with the token_indexers.
+    bertable_ptb_tokenization : ``bool``, (default = False)
+        Normalize tokenization to be more compatible with BERT; e.g. do n't -> don 't and LRB -> (
 
     Returns
     -------
@@ -128,7 +131,8 @@ class SrlReader(DatasetReader):
                  token_indexers: Dict[str, TokenIndexer] = None,
                  domain_identifier: str = None,
                  lazy: bool = False,
-                 bert_model_name: str = None) -> None:
+                 bert_model_name: str = None,
+                 bertable_ptb_tokenization: bool = False) -> None:
         super().__init__(lazy)
         self._token_indexers = token_indexers or {"tokens": SingleIdTokenIndexer()}
         self._domain_identifier = domain_identifier
@@ -139,6 +143,11 @@ class SrlReader(DatasetReader):
         else:
             self.bert_tokenizer = None
             self.lowercase_input = False
+
+        if bertable_ptb_tokenization:
+            self.tokenization_normalizer = BertablePTBWordSplitter()
+        else:
+            self.tokenization_normalizer = None
 
     def _wordpiece_tokenize_input(self, tokens: List[str]) -> Tuple[List[str], List[int], List[int]]:
         """
@@ -201,7 +210,10 @@ class SrlReader(DatasetReader):
             logger.info("Filtering to only include file paths containing the %s domain", self._domain_identifier)
 
         for sentence in self._ontonotes_subset(ontonotes_reader, file_path, self._domain_identifier):
-            tokens = [Token(t) for t in sentence.words]
+            tokens = sentence.words
+            if self.tokenization_normalizer is not None:
+                tokens = self.tokenization_normalizer.clean_tokens(tokens)
+            tokens = [Token(t) for t in tokens]
             if not sentence.srl_frames:
                 # Sentence contains no predicates.
                 tags = ["O" for _ in tokens]

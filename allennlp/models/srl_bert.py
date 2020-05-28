@@ -175,13 +175,14 @@ class SrlBert(Model):
         sequence_lengths = get_lengths_from_binary_sequence_mask(output_dict["mask"]).data.tolist()
 
         if all_predictions.dim() == 3:
-            predictions_list = [all_predictions[i].detach().cpu() for i in range(all_predictions.size(0))]
+            # predictions_list = [all_predictions[i].detach().cpu() for i in range(all_predictions.size(0))]
+            predictions_list = [all_predictions[i] for i in range(all_predictions.size(0))]
         else:
             predictions_list = [all_predictions]
         wordpiece_tags = []
         word_tags = []
-        transition_matrix = self.get_viterbi_pairwise_potentials()
-        start_transitions = self.get_start_transitions()
+        transition_matrix = self.get_viterbi_pairwise_potentials(all_predictions.device)
+        start_transitions = self.get_start_transitions(all_predictions.device)
         # **************** Different ********************
         # We add in the offsets here so we can compute the un-wordpieced tags.
         for predictions, length, offsets in zip(predictions_list,
@@ -211,7 +212,7 @@ class SrlBert(Model):
             # we only really care about the overall metrics, so we filter for them here.
             return {x: y for x, y in metric_dict.items() if "overall" in x}
 
-    def get_viterbi_pairwise_potentials(self):
+    def get_viterbi_pairwise_potentials(self, device):
         """
         Generate a matrix of pairwise transition potentials for the BIO labels.
         The only constraint implemented here is that I-XXX labels must be preceded
@@ -226,7 +227,7 @@ class SrlBert(Model):
         """
         all_labels = self.vocab.get_index_to_token_vocabulary("labels")
         num_labels = len(all_labels)
-        transition_matrix = torch.zeros([num_labels, num_labels])
+        transition_matrix = torch.zeros([num_labels, num_labels], device=device)
 
         for i, previous_label in all_labels.items():
             for j, label in all_labels.items():
@@ -237,7 +238,7 @@ class SrlBert(Model):
         return transition_matrix
 
 
-    def get_start_transitions(self):
+    def get_start_transitions(self, device):
         """
         In the BIO sequence, we cannot start the sequence with an I-XXX tag.
         This transition sequence is passed to viterbi_decode to specify this constraint.
@@ -251,7 +252,7 @@ class SrlBert(Model):
         all_labels = self.vocab.get_index_to_token_vocabulary("labels")
         num_labels = len(all_labels)
 
-        start_transitions = torch.zeros(num_labels)
+        start_transitions = torch.zeros(num_labels, device=device)
 
         for i, label in all_labels.items():
             if label[0] == "I":

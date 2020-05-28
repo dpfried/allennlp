@@ -445,21 +445,23 @@ def viterbi_decode(tag_sequence: torch.Tensor,
 
     has_start_end_restrictions = allowed_end_transitions is not None or allowed_start_transitions is not None
 
+    device = tag_sequence.device
+
     if has_start_end_restrictions:
 
         if allowed_end_transitions is None:
-            allowed_end_transitions = torch.zeros(num_tags)
+            allowed_end_transitions = torch.zeros(num_tags, device=device)
         if allowed_start_transitions is None:
-            allowed_start_transitions = torch.zeros(num_tags)
+            allowed_start_transitions = torch.zeros(num_tags, device=device)
 
         num_tags = num_tags + 2
-        new_transition_matrix = torch.zeros(num_tags, num_tags)
+        new_transition_matrix = torch.zeros(num_tags, num_tags, device=device)
         new_transition_matrix[:-2, :-2] = transition_matrix
 
         # Start and end transitions are fully defined, but cannot transition between each other.
         # pylint: disable=not-callable
-        allowed_start_transitions = torch.cat([allowed_start_transitions, torch.tensor([-math.inf, -math.inf])])
-        allowed_end_transitions = torch.cat([allowed_end_transitions, torch.tensor([-math.inf, -math.inf])])
+        allowed_start_transitions = torch.cat([allowed_start_transitions, torch.tensor([-math.inf, -math.inf], device=device)])
+        allowed_end_transitions = torch.cat([allowed_end_transitions, torch.tensor([-math.inf, -math.inf], device=device)])
         # pylint: enable=not-callable
 
         # First define how we may transition FROM the start and end tags.
@@ -484,8 +486,8 @@ def viterbi_decode(tag_sequence: torch.Tensor,
 
     if has_start_end_restrictions:
         tag_observations = [num_tags - 2] + tag_observations + [num_tags - 1]
-        zero_sentinel = torch.zeros(1, num_tags)
-        extra_tags_sentinel = torch.ones(sequence_length, 2) * -math.inf
+        zero_sentinel = torch.zeros(1, num_tags, device=device)
+        extra_tags_sentinel = torch.ones(sequence_length, 2, device=device) * -math.inf
         tag_sequence = torch.cat([tag_sequence, extra_tags_sentinel], -1)
         tag_sequence = torch.cat([zero_sentinel, tag_sequence, zero_sentinel], 0)
         sequence_length = tag_sequence.size(0)
@@ -494,7 +496,7 @@ def viterbi_decode(tag_sequence: torch.Tensor,
     path_indices = []
 
     if tag_observations[0] != -1:
-        one_hot = torch.zeros(num_tags)
+        one_hot = torch.zeros(num_tags, device=device)
         one_hot[tag_observations[0]] = 100000.
         path_scores.append(one_hot)
     else:
@@ -517,7 +519,7 @@ def viterbi_decode(tag_sequence: torch.Tensor,
                                "observations is extremely unlikely. Double check your evidence "
                                "or transition potentials!")
         if observation != -1:
-            one_hot = torch.zeros(num_tags)
+            one_hot = torch.zeros(num_tags, device=device)
             one_hot[observation] = 100000.
             path_scores.append(one_hot)
         else:
@@ -526,7 +528,7 @@ def viterbi_decode(tag_sequence: torch.Tensor,
 
     # Construct the most likely sequence backwards.
     viterbi_score, best_path = torch.max(path_scores[-1], 0)
-    viterbi_path = [int(best_path.numpy())]
+    viterbi_path = [int(best_path.item())]
     for backward_timestep in reversed(path_indices):
         viterbi_path.append(int(backward_timestep[viterbi_path[-1]]))
     # Reverse the backward path.
